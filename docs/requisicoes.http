@@ -1,0 +1,237 @@
+### ============================================================
+### Requisições prontas: extensão "REST Client" do VS Code
+### Suba a API antes: npm start
+### ============================================================
+@base = http://localhost:3000/api
+
+### 1) Tipos de usuário para a tela "Criar Conta" (público)
+GET {{base}}/tipos-usuario/publicos
+
+### 2) Cadastro de tutor (cria usuario + login)
+POST {{base}}/autenticacao/cadastro
+Content-Type: application/json
+
+{
+  "nome": "Maria da Silva",
+  "cpf": "123.456.789-09",
+  "telefone": "(86) 99999-1234",
+  "endereco": "Rua das Flores, 120 - Teresina, PI",
+  "email": "maria@teste.com",
+  "senha": "Senha@1234",
+  "tipoUsuarioId": 1
+}
+
+### ------------------ Login no modo "token" (mobile / testes) ------------------
+### Os tokens vêm no corpo da resposta. É o modo mais simples para testar aqui.
+
+### 3) Login
+# @name login
+POST {{base}}/autenticacao/login
+Content-Type: application/json
+
+{ "email": "maria@teste.com", "senha": "Senha@1234", "modo": "token" }
+
+###
+@token = {{login.response.body.token}}
+@refreshToken = {{login.response.body.refreshToken}}
+
+### 4) Meu perfil
+GET {{base}}/usuarios/eu
+Authorization: Bearer {{token}}
+
+### 5) Atualizar meus dados (troque 2 pelo seu id)
+PUT {{base}}/usuarios/2
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "nome": "Maria Souza da Silva", "telefone": "(86) 98888-0000" }
+
+### 6) Trocar senha (encerra as sessões dos OUTROS aparelhos)
+PUT {{base}}/usuarios/2/senha
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "senhaAtual": "Senha@1234", "novaSenha": "NovaSenha@5678" }
+
+### 7) Renovar (o token de renovação GIRA: guarde o novo e nunca reutilize o antigo)
+POST {{base}}/autenticacao/renovar
+Content-Type: application/json
+
+{ "modo": "token", "refreshToken": "{{refreshToken}}" }
+
+### 8) Logout (a sessão morre na hora: o token de acesso também para de valer)
+POST {{base}}/autenticacao/logout
+Content-Type: application/json
+
+{ "modo": "token", "refreshToken": "{{refreshToken}}" }
+
+### ------------------ Login no modo "cookie" (navegador) ------------------
+### O REST Client guarda os cookies sozinho. Como o pedido usa cookie, os que ALTERAM dados
+### precisam do cabeçalho Origin (o navegador envia esse cabeçalho automaticamente).
+
+### 9) Login (os tokens vão em cookies HttpOnly; o corpo traz só o usuário)
+POST {{base}}/autenticacao/login
+Content-Type: application/json
+
+{ "email": "maria@teste.com", "senha": "NovaSenha@5678" }
+
+### 10) Meu perfil (o cookie vai sozinho)
+GET {{base}}/usuarios/eu
+
+### 11) Atualizar com cookie (note o Origin)
+PUT {{base}}/usuarios/2
+Origin: http://localhost:5500
+Content-Type: application/json
+
+{ "nome": "Maria Silva" }
+
+### 12) Renovar com cookie
+POST {{base}}/autenticacao/renovar
+Origin: http://localhost:5500
+Content-Type: application/json
+
+{}
+
+### 13) Logout com cookie (apaga os cookies)
+POST {{base}}/autenticacao/logout
+Origin: http://localhost:5500
+Content-Type: application/json
+
+{}
+
+### ------------------ Somente administrador ------------------
+
+### 14) Login do administrador (use a senha que você colocou em ADMIN_SENHA no .env)
+# @name loginAdmin
+POST {{base}}/autenticacao/login
+Content-Type: application/json
+
+{ "email": "admin@crechepet.com", "senha": "COLOQUE_A_SENHA_DO_ADMIN_AQUI", "modo": "token" }
+
+###
+@tokenAdmin = {{loginAdmin.response.body.token}}
+
+### 15) Listar usuários (paginado)
+GET {{base}}/usuarios?pagina=1&limite=10
+Authorization: Bearer {{tokenAdmin}}
+
+### 16) Listar tipos de usuário
+GET {{base}}/tipos-usuario
+Authorization: Bearer {{tokenAdmin}}
+
+### 17) Criar tipo de usuário
+POST {{base}}/tipos-usuario
+Authorization: Bearer {{tokenAdmin}}
+Content-Type: application/json
+
+{ "nome": "Veterinario", "descricao": "Apoio clínico", "cadastroPublico": false }
+
+### 18) Remover usuário (troque 2 pelo id)
+DELETE {{base}}/usuarios/2
+Authorization: Bearer {{tokenAdmin}}
+
+### ============================================================
+### PAINÉIS (use o modo "token": os tokens vêm no corpo do login)
+### Ordem sugerida: administrador -> profissional -> tutor
+### ============================================================
+
+### 19) [ADMIN] Criar uma creche (2 vagas por dia)
+# @name criarCreche
+POST {{base}}/admin/creches
+Authorization: Bearer {{tokenAdmin}}
+Content-Type: application/json
+
+{ "nome": "Creche Patinhas", "endereco": "Av. Frei Serafim, 1200 - Teresina", "telefone": "(86) 3222-1000", "capacidade": 2 }
+
+###
+@crecheId = {{criarCreche.response.body.id}}
+
+### 20) [ADMIN] Profissionais em análise (aguardando vínculo)
+GET {{base}}/admin/profissionais?status=pendente
+Authorization: Bearer {{tokenAdmin}}
+
+### 21) [ADMIN] Vincular o profissional à creche (troque 3 pelo id do profissional)
+PUT {{base}}/admin/profissionais/3/vinculo
+Authorization: Bearer {{tokenAdmin}}
+Content-Type: application/json
+
+{ "crecheId": {{crecheId}} }
+
+### 22) [ADMIN] Painel com as métricas
+GET {{base}}/admin/painel
+Authorization: Bearer {{tokenAdmin}}
+
+### 23) [PROFISSIONAL] Conta em análise? (funciona mesmo sem vínculo). Use o token do profissional.
+GET {{base}}/profissional/vinculo
+Authorization: Bearer {{tokenProfissional}}
+
+### 24) [TUTOR] Cadastrar o pet (use o token do tutor)
+# @name criarPet
+POST {{base}}/tutor/pets
+Authorization: Bearer {{tokenTutor}}
+Content-Type: application/json
+
+{ "nome": "Thor", "raca": "Labrador", "idade": 3, "castrado": true }
+
+###
+@petId = {{criarPet.response.body.id}}
+
+### 25) [TUTOR] Registrar uma vacina
+POST {{base}}/tutor/pets/{{petId}}/vacinas
+Authorization: Bearer {{tokenTutor}}
+Content-Type: application/json
+
+{ "produto": "V10", "dose": "1ª dose", "data": "2026-08-10" }
+
+### 26) [TUTOR] Ver as creches com as vagas livres de um dia
+GET {{base}}/tutor/creches?data=2026-10-05
+Authorization: Bearer {{tokenTutor}}
+
+### 27) [TUTOR] Agendar (a data deve ser de hoje em diante)
+# @name agendar
+POST {{base}}/tutor/agendamentos
+Authorization: Bearer {{tokenTutor}}
+Content-Type: application/json
+
+{ "petId": {{petId}}, "crecheId": {{crecheId}}, "data": "2026-10-05", "horaInicio": "08:00", "horaFim": "17:00" }
+
+###
+@agendamentoId = {{agendar.response.body.id}}
+
+### 28) [PROFISSIONAL] Agenda de um dia (vagas e agendamentos da creche dele)
+GET {{base}}/profissional/agenda?data=2026-10-05
+Authorization: Bearer {{tokenProfissional}}
+
+### 29) [PROFISSIONAL] Detalhes: pet, vacinas, castrado e tutor
+GET {{base}}/profissional/agendamentos/{{agendamentoId}}
+Authorization: Bearer {{tokenProfissional}}
+
+### 30) [PROFISSIONAL] Iniciar o atendimento (só no dia agendado)
+PUT {{base}}/profissional/agendamentos/{{agendamentoId}}/status
+Authorization: Bearer {{tokenProfissional}}
+Content-Type: application/json
+
+{ "status": "em_andamento" }
+
+### 31) [PROFISSIONAL] Registrar uma atividade
+POST {{base}}/profissional/agendamentos/{{agendamentoId}}/atividades
+Authorization: Bearer {{tokenProfissional}}
+Content-Type: application/json
+
+{ "descricao": "Passeio no jardim" }
+
+### 32) [TUTOR] Acompanhar as atividades (acrescente ?depois=<horário da última recebida> para só as novas)
+GET {{base}}/tutor/agendamentos/{{agendamentoId}}/atividades
+Authorization: Bearer {{tokenTutor}}
+
+### 33) [PROFISSIONAL] Concluir o atendimento
+PUT {{base}}/profissional/agendamentos/{{agendamentoId}}/status
+Authorization: Bearer {{tokenProfissional}}
+Content-Type: application/json
+
+{ "status": "concluido" }
+
+### 34) [TUTOR] Resumo do painel
+GET {{base}}/tutor/painel
+Authorization: Bearer {{tokenTutor}}
+
