@@ -1,0 +1,207 @@
+// ============================================================
+// Schema do Prisma — Creche Pet (usuários, tipos e login)
+// A URL do banco NÃO fica aqui: vem do arquivo prisma.config.js (.env).
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Categorias/tipos de usuário (tutor, profissional, administrador...).
+// "cadastroPublico" define se a pessoa pode escolher esse tipo sozinha no cadastro.
+model TipoUsuario {
+  id              Int       @id @default(autoincrement())
+  nome            String    @unique
+  descricao       String?
+  cadastroPublico Boolean   @default(false) @map("cadastro_publico")
+  criadoEm        DateTime  @default(now()) @map("criado_em")
+  atualizadoEm    DateTime  @updatedAt @map("atualizado_em")
+
+  usuarios        Usuario[]
+
+  @@map("tipo_usuario")
+}
+
+// Dados pessoais. NÃO guarda e-mail nem senha (isso é da tabela login).
+model Usuario {
+  id            Int         @id @default(autoincrement())
+  tipoUsuarioId Int         @map("tipo_usuario_id")
+  nome          String
+  cpf           String      @unique
+  telefone      String
+  endereco      String?
+  criadoEm      DateTime    @default(now()) @map("criado_em")
+  atualizadoEm  DateTime    @updatedAt @map("atualizado_em")
+
+  // RESTRICT: não deixa apagar um tipo que ainda tem usuários.
+  tipoUsuario   TipoUsuario @relation(fields: [tipoUsuarioId], references: [id], onDelete: Restrict)
+  login         Login?
+  sessoes       Sessao[]
+  vinculo       VinculoProfissional?
+  pets          Pet[]
+  atividades    Atividade[] @relation("AtividadesRegistradas")
+
+  @@index([tipoUsuarioId])
+  @@map("usuario")
+}
+
+// Credenciais: e-mail + hash da senha (nunca a senha em texto). Relação 1:1 com usuario.
+model Login {
+  id               Int       @id @default(autoincrement())
+  usuarioId        Int       @unique @map("usuario_id")
+  email            String    @unique
+  senhaHash        String    @map("senha_hash")
+  tentativasFalhas Int       @default(0) @map("tentativas_falhas")
+  bloqueadoAte     DateTime? @map("bloqueado_ate")
+  ultimoLoginEm    DateTime? @map("ultimo_login_em")
+  criadoEm         DateTime  @default(now()) @map("criado_em")
+  atualizadoEm     DateTime  @updatedAt @map("atualizado_em")
+
+  // CASCADE: apagar o usuário apaga o login dele junto.
+  usuario          Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@map("login")
+}
+
+// Uma linha por "login aberto" (um navegador ou aparelho). É o que permite fazer logout de verdade:
+// revogar a sessão invalida o token de acesso E o de renovação.
+model Sessao {
+  id                  String    @id @default(uuid())
+  usuarioId           Int       @map("usuario_id")
+  refreshHash         String    @unique @map("refresh_hash")            // hash do token de renovação atual
+  refreshAnteriorHash String?   @map("refresh_anterior_hash")           // o anterior: se alguém o usar de novo, é sinal de roubo
+  expiraEm            DateTime  @map("expira_em")
+  revogadaEm          DateTime? @map("revogada_em")
+  criadoEm            DateTime  @default(now()) @map("criado_em")
+  atualizadoEm        DateTime  @updatedAt @map("atualizado_em")
+
+  // CASCADE: apagar o usuário apaga as sessões dele.
+  usuario             Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+  @@map("sessao")
+}
+
+// ============================================================
+// Painéis: creches, pets, agendamentos e atividades
+// ============================================================
+
+enum StatusAgendamento {
+  agendado
+  em_andamento
+  concluido
+  cancelado
+
+  @@map("status_agendamento")
+}
+
+// A creche. "capacidade" = quantas vagas ela tem POR DIA.
+model Creche {
+  id           Int      @id @default(autoincrement())
+  nome         String   @unique
+  endereco     String
+  telefone     String?
+  capacidade   Int
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  profissionais VinculoProfissional[]
+  agendamentos  Agendamento[]
+
+  @@map("creche")
+}
+
+// Liga um profissional a UMA creche. Quem tem vínculo está "ativo"; sem vínculo, a conta fica "em análise".
+model VinculoProfissional {
+  id        Int      @id @default(autoincrement())
+  usuarioId Int      @unique @map("usuario_id")
+  crecheId  Int      @map("creche_id")
+  criadoEm  DateTime @default(now()) @map("criado_em")
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  creche  Creche  @relation(fields: [crecheId], references: [id], onDelete: Cascade)
+
+  @@index([crecheId])
+  @@map("vinculo_profissional")
+}
+
+model Pet {
+  id           Int      @id @default(autoincrement())
+  tutorId      Int      @map("tutor_id")
+  nome         String
+  raca         String
+  idade        Int      // em anos
+  castrado     Boolean  @default(false)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  tutor        Usuario       @relation(fields: [tutorId], references: [id], onDelete: Cascade)
+  vacinas      Vacina[]
+  agendamentos Agendamento[]
+
+  @@index([tutorId])
+  @@map("pet")
+}
+
+model Vacina {
+  id       Int      @id @default(autoincrement())
+  petId    Int      @map("pet_id")
+  produto  String
+  dose     String
+  data     DateTime @db.Date
+  criadoEm DateTime @default(now()) @map("criado_em")
+
+  pet Pet @relation(fields: [petId], references: [id], onDelete: Cascade)
+
+  @@index([petId])
+  @@map("vacina")
+}
+
+model Agendamento {
+  id           Int               @id @default(autoincrement())
+  petId        Int               @map("pet_id")
+  crecheId     Int               @map("creche_id")
+  data         DateTime          @db.Date
+  horaInicio   String            @map("hora_inicio") // "08:00"
+  horaFim      String            @map("hora_fim")    // "17:00"
+  status       StatusAgendamento @default(agendado)
+  criadoEm     DateTime          @default(now()) @map("criado_em")
+  atualizadoEm DateTime          @updatedAt @map("atualizado_em")
+
+  pet        Pet         @relation(fields: [petId], references: [id], onDelete: Cascade)
+  // RESTRICT: não deixa apagar uma creche que ainda tem agendamentos.
+  creche     Creche      @relation(fields: [crecheId], references: [id], onDelete: Restrict)
+  atividades Atividade[]
+
+  @@index([crecheId, data])
+  @@index([petId])
+  @@map("agendamento")
+}
+
+// O que o profissional registra durante o dia (o tutor acompanha por aqui).
+model Atividade {
+  id             Int      @id @default(autoincrement())
+  agendamentoId  Int      @map("agendamento_id")
+  profissionalId Int?     @map("profissional_id")
+  descricao      String
+  registradaEm   DateTime @default(now()) @map("registrada_em")
+
+  agendamento  Agendamento @relation(fields: [agendamentoId], references: [id], onDelete: Cascade)
+  profissional Usuario?    @relation("AtividadesRegistradas", fields: [profissionalId], references: [id], onDelete: SetNull)
+
+  @@index([agendamentoId])
+  @@map("atividade")
+}
+
+//Tabela para testes.
+model Campanha{
+  id Int @id @default(autoincrement())
+  name String 
+  qtdVagas Int
+
+  @@map("campanha") 
+}
